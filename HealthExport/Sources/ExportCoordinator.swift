@@ -17,7 +17,7 @@ final class ExportCoordinator: ObservableObject {
 
     @Published var status: String = UserDefaults.standard.string(forKey: SettingsKey.lastStatus) ?? "Not exported yet"
     @Published var isRunning = false
-    @Published var lastFile: URL?
+    @Published var lastFiles: [URL] = []
 
     private var defaults: UserDefaults { .standard }
 
@@ -48,10 +48,14 @@ final class ExportCoordinator: ObservableObject {
             setStatus("Reading Health data...")
             let (csv, rowCount, range) = try await HealthExporter.buildCSV(daysBack: days)
 
+            let (samplesCSV, sampleCount) = try await HealthExporter.buildSamplesCSV(daysBack: days)
+
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let name = "health-export-\(Self.fileDate()).csv"
-            let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent(name)
-            try csv.write(to: file, atomically: true, encoding: .utf8)
-            lastFile = file
+            let samplesName = "health-samples-\(Self.fileDate()).csv"
+            try csv.write(to: docs.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            try samplesCSV.write(to: docs.appendingPathComponent(samplesName), atomically: true, encoding: .utf8)
+            lastFiles = [docs.appendingPathComponent(name), docs.appendingPathComponent(samplesName)]
 
             let raw = (defaults.string(forKey: SettingsKey.endpoint) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !raw.isEmpty else {
@@ -63,11 +67,14 @@ final class ExportCoordinator: ObservableObject {
                 return false
             }
 
-            setStatus("Uploading \(rowCount) rows...")
+            setStatus("Uploading \(rowCount) daily rows + \(sampleCount) samples...")
+            let token = Keychain.get(SettingsKey.token)
             try await Uploader.upload(csv: Data(csv.utf8), filename: name, range: range,
-                                      to: url, token: Keychain.get(SettingsKey.token))
+                                      dataset: "daily", to: url, token: token)
+            try await Uploader.upload(csv: Data(samplesCSV.utf8), filename: samplesName, range: range,
+                                      dataset: "samples", to: url, token: token)
             defaults.set(Date(), forKey: SettingsKey.lastExport)
-            setStatus("Uploaded \(rowCount) rows (\(range)) at \(Date().formatted(date: .abbreviated, time: .shortened))")
+            setStatus("Uploaded \(rowCount) daily rows + \(sampleCount) samples (\(range)) at \(Date().formatted(date: .abbreviated, time: .shortened))")
             return true
         } catch {
             setStatus("Export failed: \(error.localizedDescription)")

@@ -20,25 +20,39 @@ HealthKit entitlements (including background delivery) are enabled automatically
 ## First run
 Open the app, paste your dashboard URL (must be `https://`) and optional API token, tap **Export now**, and approve the Health permissions. To backfill history, raise "Days included" (up to 365) and export once, then set it back to ~7.
 
-## CSV format
-Long format, one row per day/metric/stat:
+## What gets exported
+Each export sends **two CSVs** in two POSTs to the same URL, distinguished by the `X-Dataset` header:
 
+**`daily`** (`X-Dataset: daily`) - one row per day/metric/stat:
 ```
 date,metric,stat,value,unit
 2026-09-28,steps,sum,10432.0,count
-2026-09-28,heart_rate,avg,71.2,count/min
-2026-09-28,sleep_rem,sum,1.6,hr
+2026-09-28,body_mass,avg,82.4,kg
+2026-09-28,dietary_energy,sum,2140.0,kcal
 ```
-Metrics: activity, heart/vitals, body, mobility, nutrition, audio exposure, sleep stages (hours, dated by wake day), and per-type workout count/minutes/energy. Add more in `HealthExporter.specs`. This is daily aggregates, not every raw sample.
+Upsert on `(date, metric, stat)`.
+
+**`samples`** (`X-Dataset: samples`) - every individual reading/event with its source app:
+```
+start,end,metric,value,unit,source
+2026-09-28T07:12:03-04:00,2026-09-28T07:12:03-04:00,body_mass,82.4,kg,RENPHO
+2026-09-28T12:30:00-04:00,2026-09-28T12:30:00-04:00,dietary_energy,640.0,kcal,Lose It!
+```
+Upsert/dedupe on `(start, end, metric, source, value)`. Includes weight and body composition, blood pressure, glucose, temperature, blood oxygen, every dietary entry (calories, macros, and ~35 micronutrients), sleep segments, workouts, and Health events (high/low heart rate, irregular rhythm, low cardio fitness, walking steadiness, loud audio, mindful sessions).
+
+Lose It! and Renpho only appear if they are syncing into Apple Health (Lose It! > Settings > Apple Health; Renpho > Settings > Apple Health). Renpho writes weight, BMI, body fat and lean mass; its other readings (muscle, water, bone) are not Health types and can't be exported by any HealthKit app.
+
+The daily file has ~100 metrics: activity, heart/vitals, body, mobility, running/cycling, respiratory, nutrition, audio exposure, sleep stages (hours, dated by wake day) and per-type workout count/minutes/energy. Add more in `HealthExporter.specs`. Not included: ECG waveforms, clinical records, cycle tracking, medications, GPS routes.
 
 ## Dashboard endpoint contract
 `POST <your URL>` with the CSV as the raw body:
 
 - `Content-Type: text/csv`
 - `Authorization: Bearer <token>` (if set)
+- `X-Dataset`: `daily` or `samples`
 - `X-Filename`, `X-Date-Range` (`YYYY-MM-DD..YYYY-MM-DD`)
 
-Respond with any 2xx on success. Each upload overlaps previous ones (last N days), so **upsert on `(date, metric, stat)`** rather than appending.
+Respond with any 2xx on success. Each upload overlaps previous ones (last N days), so upsert rather than append.
 
 ## How the automatic export works (and its limits)
 iOS doesn't allow exact-time background jobs, so the app uses every trigger available:

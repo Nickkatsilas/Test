@@ -8,13 +8,14 @@ enum Uploader {
     }
 
     /// POSTs the CSV as the raw request body (Content-Type: text/csv).
-    static func upload(csv: Data, filename: String, range: String, to url: URL, token: String) async throws {
+    static func upload(csv: Data, filename: String, range: String, dataset: String, to url: URL, token: String) async throws {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
         request.setValue("text/csv", forHTTPHeaderField: "Content-Type")
         request.setValue(filename, forHTTPHeaderField: "X-Filename")
         request.setValue(range, forHTTPHeaderField: "X-Date-Range")
+        request.setValue(dataset, forHTTPHeaderField: "X-Dataset")   // "daily" or "samples"
         if !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

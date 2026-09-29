@@ -17,7 +17,18 @@ enum HealthExporter {
         let name: String
         let unit: HKUnit
         let cumulative: Bool   // true = daily sum, false = daily avg/min/max
+
+        /// Also export every individual reading (with timestamp + source app) in the samples file.
+        var detail: Bool {
+            name.hasPrefix("dietary_") || HealthExporter.detailMetrics.contains(name)
+        }
     }
+
+    private static let detailMetrics: Set<String> = [
+        "body_mass", "body_fat", "lean_body_mass", "bmi", "waist_circumference",
+        "blood_pressure_systolic", "blood_pressure_diastolic", "blood_glucose",
+        "body_temperature", "blood_oxygen", "blood_alcohol", "insulin_delivery",
+    ]
 
     private static let bpm = HKUnit.count().unitDivided(by: .minute())
     private static let vo2 = HKUnit.literUnit(with: .milli).unitDivided(by: HKUnit.gramUnit(with: .kilo).unitMultiplied(by: .minute()))
@@ -56,13 +67,77 @@ enum HealthExporter {
         Spec(id: .walkingStepLength, name: "walking_step_length", unit: .meter(), cumulative: false),
         Spec(id: .walkingAsymmetryPercentage, name: "walking_asymmetry", unit: .percent(), cumulative: false),
         Spec(id: .appleWalkingSteadiness, name: "walking_steadiness", unit: .percent(), cumulative: false),
-        // Nutrition (daily totals)
+        Spec(id: .waistCircumference, name: "waist_circumference", unit: .meter(), cumulative: false),
+        Spec(id: .heartRateRecoveryOneMinute, name: "heart_rate_recovery_1min", unit: bpm, cumulative: false),
+        Spec(id: .atrialFibrillationBurden, name: "afib_burden", unit: .percent(), cumulative: false),
+        Spec(id: .appleSleepingWristTemperature, name: "sleeping_wrist_temperature", unit: .degreeCelsius(), cumulative: false),
+        Spec(id: .basalBodyTemperature, name: "basal_body_temperature", unit: .degreeCelsius(), cumulative: false),
+        Spec(id: .peripheralPerfusionIndex, name: "perfusion_index", unit: .percent(), cumulative: false),
+        Spec(id: .forcedVitalCapacity, name: "forced_vital_capacity", unit: .liter(), cumulative: false),
+        Spec(id: .forcedExpiratoryVolume1, name: "fev1", unit: .liter(), cumulative: false),
+        Spec(id: .bloodAlcoholContent, name: "blood_alcohol", unit: .percent(), cumulative: false),
+        Spec(id: .insulinDelivery, name: "insulin_delivery", unit: .internationalUnit(), cumulative: true),
+        Spec(id: .numberOfTimesFallen, name: "falls", unit: .count(), cumulative: true),
+        Spec(id: .numberOfAlcoholicBeverages, name: "alcoholic_beverages", unit: .count(), cumulative: true),
+        Spec(id: .uvExposure, name: "uv_exposure", unit: .count(), cumulative: false),
+        Spec(id: .appleMoveTime, name: "move_minutes", unit: .minute(), cumulative: true),
+        Spec(id: .pushCount, name: "wheelchair_pushes", unit: .count(), cumulative: true),
+        Spec(id: .distanceSwimming, name: "distance_swimming", unit: .meter(), cumulative: true),
+        Spec(id: .swimmingStrokeCount, name: "swimming_strokes", unit: .count(), cumulative: true),
+        // Mobility (extra)
+        Spec(id: .walkingDoubleSupportPercentage, name: "walking_double_support", unit: .percent(), cumulative: false),
+        Spec(id: .stairAscentSpeed, name: "stair_ascent_speed", unit: HKUnit.meter().unitDivided(by: .second()), cumulative: false),
+        Spec(id: .stairDescentSpeed, name: "stair_descent_speed", unit: HKUnit.meter().unitDivided(by: .second()), cumulative: false),
+        Spec(id: .sixMinuteWalkTestDistance, name: "six_minute_walk_distance", unit: .meter(), cumulative: false),
+        // Running & cycling
+        Spec(id: .runningSpeed, name: "running_speed", unit: HKUnit.meter().unitDivided(by: .second()), cumulative: false),
+        Spec(id: .runningPower, name: "running_power", unit: .watt(), cumulative: false),
+        Spec(id: .runningStrideLength, name: "running_stride_length", unit: .meter(), cumulative: false),
+        Spec(id: .runningVerticalOscillation, name: "running_vertical_oscillation", unit: .meterUnit(with: .centi), cumulative: false),
+        Spec(id: .runningGroundContactTime, name: "running_ground_contact_time", unit: .secondUnit(with: .milli), cumulative: false),
+        Spec(id: .cyclingSpeed, name: "cycling_speed", unit: HKUnit.meter().unitDivided(by: .second()), cumulative: false),
+        Spec(id: .cyclingPower, name: "cycling_power", unit: .watt(), cumulative: false),
+        Spec(id: .cyclingCadence, name: "cycling_cadence", unit: bpm, cumulative: false),
+        // Nutrition (daily totals; Lose It! writes these)
         Spec(id: .dietaryEnergyConsumed, name: "dietary_energy", unit: .kilocalorie(), cumulative: true),
         Spec(id: .dietaryProtein, name: "dietary_protein", unit: .gram(), cumulative: true),
         Spec(id: .dietaryCarbohydrates, name: "dietary_carbs", unit: .gram(), cumulative: true),
         Spec(id: .dietaryFatTotal, name: "dietary_fat", unit: .gram(), cumulative: true),
         Spec(id: .dietaryWater, name: "dietary_water", unit: .liter(), cumulative: true),
         Spec(id: .dietaryCaffeine, name: "dietary_caffeine", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryFiber, name: "dietary_fiber", unit: .gram(), cumulative: true),
+        Spec(id: .dietarySugar, name: "dietary_sugar", unit: .gram(), cumulative: true),
+        Spec(id: .dietarySodium, name: "dietary_sodium", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryFatSaturated, name: "dietary_fat_saturated", unit: .gram(), cumulative: true),
+        Spec(id: .dietaryFatMonounsaturated, name: "dietary_fat_monounsaturated", unit: .gram(), cumulative: true),
+        Spec(id: .dietaryFatPolyunsaturated, name: "dietary_fat_polyunsaturated", unit: .gram(), cumulative: true),
+        Spec(id: .dietaryCholesterol, name: "dietary_cholesterol", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryPotassium, name: "dietary_potassium", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryCalcium, name: "dietary_calcium", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryIron, name: "dietary_iron", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryMagnesium, name: "dietary_magnesium", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryZinc, name: "dietary_zinc", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryPhosphorus, name: "dietary_phosphorus", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryCopper, name: "dietary_copper", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryManganese, name: "dietary_manganese", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryChloride, name: "dietary_chloride", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietarySelenium, name: "dietary_selenium", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryChromium, name: "dietary_chromium", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryMolybdenum, name: "dietary_molybdenum", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryIodine, name: "dietary_iodine", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryVitaminA, name: "dietary_vitamin_a", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryVitaminC, name: "dietary_vitamin_c", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryVitaminD, name: "dietary_vitamin_d", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryVitaminE, name: "dietary_vitamin_e", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryVitaminK, name: "dietary_vitamin_k", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryVitaminB6, name: "dietary_vitamin_b6", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryVitaminB12, name: "dietary_vitamin_b12", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryFolate, name: "dietary_folate", unit: .gramUnit(with: .micro), cumulative: true),
+        Spec(id: .dietaryThiamin, name: "dietary_thiamin", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryRiboflavin, name: "dietary_riboflavin", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryNiacin, name: "dietary_niacin", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryPantothenicAcid, name: "dietary_pantothenic_acid", unit: .gramUnit(with: .milli), cumulative: true),
+        Spec(id: .dietaryBiotin, name: "dietary_biotin", unit: .gramUnit(with: .micro), cumulative: true),
         // Environment
         Spec(id: .environmentalAudioExposure, name: "environmental_audio", unit: .decibelAWeightedSoundPressureLevel(), cumulative: false),
         Spec(id: .headphoneAudioExposure, name: "headphone_audio", unit: .decibelAWeightedSoundPressureLevel(), cumulative: false),
@@ -70,8 +145,21 @@ enum HealthExporter {
 
     private static var sleepType: HKCategoryType { HKCategoryType(.sleepAnalysis) }
 
+    /// Health events worth flagging (each occurrence is exported as a row in the samples file).
+    private static let eventTypes: [(id: HKCategoryTypeIdentifier, name: String)] = [
+        (.highHeartRateEvent, "event_high_heart_rate"),
+        (.lowHeartRateEvent, "event_low_heart_rate"),
+        (.irregularHeartRhythmEvent, "event_irregular_rhythm"),
+        (.lowCardioFitnessEvent, "event_low_cardio_fitness"),
+        (.appleWalkingSteadinessEvent, "event_walking_steadiness"),
+        (.environmentalAudioExposureEvent, "event_loud_environment"),
+        (.headphoneAudioExposureEvent, "event_loud_headphones"),
+        (.mindfulSession, "mindful_session"),
+    ]
+
     private static var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [sleepType, .workoutType()]
+        for e in eventTypes { types.insert(HKCategoryType(e.id)) }
         for spec in specs { types.insert(HKQuantityType(spec.id)) }
         return types
     }
@@ -121,6 +209,75 @@ enum HealthExporter {
         }
         let range = "\(dayString(start))..\(dayString(now))"
         return (lines.joined(separator: "\n") + "\n", rows.count, range)
+    }
+
+    /// Every individual reading/event (with source app, e.g. "Lose It!" or "RENPHO") for the same window.
+    static func buildSamplesCSV(daysBack: Int) async throws -> (csv: String, rowCount: Int) {
+        let cal = Calendar.current
+        let now = Date()
+        let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -(max(daysBack, 1) - 1), to: now) ?? now)
+
+        struct Line { let start: Date; let text: String }
+        var out: [Line] = []
+        let iso = ISO8601DateFormatter()
+        iso.timeZone = Calendar.current.timeZone
+        iso.formatOptions = [.withInternetDateTime]
+
+        func add(_ s: HKSample, metric: String, value: Double, unit: String) {
+            let text = [iso.string(from: s.startDate), iso.string(from: s.endDate), metric, "\(value)", unit,
+                        csvEscape(s.sourceRevision.source.name)].joined(separator: ",")
+            out.append(Line(start: s.startDate, text: text))
+        }
+
+        for spec in specs where spec.detail {
+            let all: [HKSample]
+            do { all = try await samples(of: HKQuantityType(spec.id), from: start, to: now) }
+            catch { if shouldRethrow(error) { throw error }; continue }
+            for case let q as HKQuantitySample in all {
+                add(q, metric: spec.name, value: q.quantity.doubleValue(for: spec.unit), unit: spec.unit.unitString)
+            }
+        }
+        for event in eventTypes {
+            let all: [HKSample]
+            do { all = try await samples(of: HKCategoryType(event.id), from: start, to: now) }
+            catch { if shouldRethrow(error) { throw error }; continue }
+            for case let c as HKCategorySample in all {
+                if event.id == .mindfulSession {
+                    add(c, metric: event.name, value: c.endDate.timeIntervalSince(c.startDate) / 60, unit: "min")
+                } else {
+                    add(c, metric: event.name, value: Double(c.value), unit: "category")
+                }
+            }
+        }
+        if let all = try? await samples(of: sleepType, from: start, to: now) {
+            for case let c as HKCategorySample in all {
+                let stage: String
+                switch HKCategoryValueSleepAnalysis(rawValue: c.value) {
+                case .asleepCore: stage = "sleep_core"
+                case .asleepDeep: stage = "sleep_deep"
+                case .asleepREM: stage = "sleep_rem"
+                case .asleepUnspecified: stage = "sleep_asleep"
+                case .awake: stage = "sleep_awake"
+                case .inBed: stage = "sleep_in_bed"
+                default: continue
+                }
+                add(c, metric: stage, value: c.endDate.timeIntervalSince(c.startDate) / 60, unit: "min")
+            }
+        }
+        if let all = try? await samples(of: .workoutType(), from: start, to: now) {
+            for case let w as HKWorkout in all {
+                add(w, metric: "workout_\(workoutName(w.workoutActivityType))", value: w.duration / 60, unit: "min")
+            }
+        }
+
+        out.sort { $0.start < $1.start }
+        let csv = (["start,end,metric,value,unit,source"] + out.map(\.text)).joined(separator: "\n") + "\n"
+        return (csv, out.count)
+    }
+
+    private static func csvEscape(_ field: String) -> String {
+        guard field.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return field }
+        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
     private static func dayString(_ date: Date) -> String {

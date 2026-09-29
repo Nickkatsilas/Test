@@ -42,8 +42,8 @@ struct ContentView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
-                    if let file = coordinator.lastFile {
-                        ShareLink(item: file) { Label("Share latest CSV", systemImage: "square.and.arrow.up") }
+                    ForEach(coordinator.lastFiles, id: \.self) { file in
+                        ShareLink(item: file) { Label(file.lastPathComponent, systemImage: "square.and.arrow.up") }
                     }
                 }
 
