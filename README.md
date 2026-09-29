@@ -40,13 +40,16 @@ Metrics: activity, heart/vitals, body, mobility, nutrition, audio exposure, slee
 
 Respond with any 2xx on success. Each upload overlaps previous ones (last N days), so **upsert on `(date, metric, stat)`** rather than appending.
 
-## How "automatic daily" works (and its limits)
-iOS doesn't allow exact-time background jobs. The app tries three triggers, and exports at most once per calendar day after a successful upload:
-1. HealthKit background delivery (wakes the app hourly when new steps/heart rate/sleep arrive)
-2. A background app refresh request (~every 6h at the earliest)
-3. Whenever you open the app
+## How the automatic export works (and its limits)
+iOS doesn't allow exact-time background jobs, so the app uses every trigger available:
+1. HealthKit background delivery (`.immediate`) for steps, heart rate, active energy, HRV, sleep and workouts
+2. A background app refresh request (asked for every ~1h; iOS decides the real timing)
+3. The moment the phone is unlocked (if the app is still alive in the background)
+4. Whenever you open the app
 
-Health data is encrypted while the phone is locked, so an overnight run on a locked phone can't read it; it completes on the next wake while unlocked. Keep **Background App Refresh** on and don't force-quit the app. A local copy of each CSV is also saved to the app's Files folder.
+After a successful upload the next automatic one waits 3 hours (`minInterval` in `ExportCoordinator.swift`); failed or locked-phone attempts retry on the next trigger. So your dashboard gets fresh same-day data several times a day.
+
+Health data is encrypted while the phone is locked, so a run on a locked phone can't read it and waits for the next trigger. Keep **Background App Refresh** on and don't force-quit the app. A local copy of each CSV is saved to the app's Files folder.
 
 ## Note
 This was written without access to Xcode, so it has not been compiled. Expect to fix a small build error or two on first build.

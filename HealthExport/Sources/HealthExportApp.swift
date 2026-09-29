@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         }
         ExportCoordinator.scheduleNextRefresh()
         HealthExporter.startBackgroundDelivery()
+        // If the app is alive in the background, export as soon as the phone is unlocked.
+        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                               object: nil, queue: .main) { _ in
+            Task { @MainActor in await ExportCoordinator.shared.run(force: false) }
+        }
         return true
     }
 }

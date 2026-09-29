@@ -82,12 +82,13 @@ enum HealthExporter {
         try await store.requestAuthorization(toShare: [], read: readTypes)
     }
 
-    /// Wakes the app in the background when new Health data lands, so the daily export can run.
+    /// Wakes the app in the background when new Health data lands (throttled by ExportCoordinator.minInterval).
     static func startBackgroundDelivery() {
         guard isAvailable else { return }
-        let types: [HKSampleType] = [HKQuantityType(.stepCount), HKQuantityType(.heartRate), sleepType]
+        let types: [HKSampleType] = [HKQuantityType(.stepCount), HKQuantityType(.heartRate), HKQuantityType(.activeEnergyBurned),
+                                     HKQuantityType(.heartRateVariabilitySDNN), sleepType, .workoutType()]
         for type in types {
-            store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
+            store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, _ in
                 Task { @MainActor in
                     await ExportCoordinator.shared.run(force: false)

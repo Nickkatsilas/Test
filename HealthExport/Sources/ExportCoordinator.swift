@@ -21,13 +21,16 @@ final class ExportCoordinator: ObservableObject {
 
     private var defaults: UserDefaults { .standard }
 
-    /// Runs the export. With `force == false` it only runs once per calendar day (after a successful upload).
+    /// Minimum gap between successful automatic uploads; failures/locked-phone runs retry on every trigger.
+    private static let minInterval: TimeInterval = 3 * 3600
+
+    /// Runs the export. With `force == false` it skips if a successful upload happened within `minInterval`.
     @discardableResult
     func run(force: Bool) async -> Bool {
         guard !isRunning else { return false }
 
         if !force, let last = defaults.object(forKey: SettingsKey.lastExport) as? Date,
-           Calendar.current.isDateInToday(last) {
+           Date().timeIntervalSince(last) < Self.minInterval {
             return true
         }
         guard HealthExporter.isAvailable else { setStatus("Health data isn't available on this device"); return false }
@@ -87,7 +90,7 @@ final class ExportCoordinator: ObservableObject {
     /// Asks iOS to wake the app again. iOS decides the exact time; this is a "no sooner than" hint.
     nonisolated static func scheduleNextRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: refreshTaskID)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 6 * 3600)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 3600)
         try? BGTaskScheduler.shared.submit(request)
     }
 }

@@ -48,7 +48,7 @@ struct ContentView: View {
                 }
 
                 Section {
-                    Text("Runs automatically about once a day in the background. iOS can't read Health while the phone is locked, so if it was locked the export happens the next time it's unlocked or the app is opened.")
+                    Text("Runs automatically in the background: when new Health data arrives, on unlock, and at least hourly via iOS background refresh. Successful uploads are spaced 3+ hours apart; failed or locked-phone attempts retry on the next trigger.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
