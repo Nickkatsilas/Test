@@ -192,8 +192,8 @@ struct MetricCardView: View {
     private var deltaText: String? {
         guard let a = card.avg7, let p = card.prev7, p != 0 else { return nil }
         let pct = (a - p) / abs(p) * 100
-        let arrow = pct >= 0 ? "arrow.up.right" : "arrow.down.right"
-        return "\(Image(systemName: arrow)) \(abs(Int(pct.rounded())))% vs. prior week"
+        let arrow = pct >= 0 ? "↑" : "↓"
+        return "\(arrow) \(abs(Int(pct.rounded())))% vs. prior week"
     }
 
     var body: some View {
