@@ -155,11 +155,62 @@ enum HealthExporter {
         (.environmentalAudioExposureEvent, "event_loud_environment"),
         (.headphoneAudioExposureEvent, "event_loud_headphones"),
         (.mindfulSession, "mindful_session"),
+        (.abdominalCramps, "symptom_abdominal_cramps"),
+        (.acne, "symptom_acne"),
+        (.appetiteChanges, "symptom_appetite_changes"),
+        (.bladderIncontinence, "symptom_bladder_incontinence"),
+        (.bloating, "symptom_bloating"),
+        (.breastPain, "symptom_breast_pain"),
+        (.chestTightnessOrPain, "symptom_chest_tightness_or_pain"),
+        (.chills, "symptom_chills"),
+        (.constipation, "symptom_constipation"),
+        (.coughing, "symptom_coughing"),
+        (.diarrhea, "symptom_diarrhea"),
+        (.dizziness, "symptom_dizziness"),
+        (.drySkin, "symptom_dry_skin"),
+        (.fainting, "symptom_fainting"),
+        (.fatigue, "symptom_fatigue"),
+        (.fever, "symptom_fever"),
+        (.generalizedBodyAche, "symptom_generalized_body_ache"),
+        (.hairLoss, "symptom_hair_loss"),
+        (.headache, "symptom_headache"),
+        (.heartburn, "symptom_heartburn"),
+        (.hotFlashes, "symptom_hot_flashes"),
+        (.lossOfSmell, "symptom_loss_of_smell"),
+        (.lossOfTaste, "symptom_loss_of_taste"),
+        (.lowerBackPain, "symptom_lower_back_pain"),
+        (.memoryLapse, "symptom_memory_lapse"),
+        (.moodChanges, "symptom_mood_changes"),
+        (.nausea, "symptom_nausea"),
+        (.nightSweats, "symptom_night_sweats"),
+        (.pelvicPain, "symptom_pelvic_pain"),
+        (.rapidPoundingOrFlutteringHeartbeat, "symptom_rapid_pounding_or_fluttering_heartbeat"),
+        (.runnyNose, "symptom_runny_nose"),
+        (.shortnessOfBreath, "symptom_shortness_of_breath"),
+        (.sinusCongestion, "symptom_sinus_congestion"),
+        (.skippedHeartbeat, "symptom_skipped_heartbeat"),
+        (.sleepChanges, "symptom_sleep_changes"),
+        (.soreThroat, "symptom_sore_throat"),
+        (.vaginalDryness, "symptom_vaginal_dryness"),
+        (.vomiting, "symptom_vomiting"),
+        (.wheezing, "symptom_wheezing"),
+        (.menstrualFlow, "cycle_menstrual_flow"),
+        (.intermenstrualBleeding, "cycle_intermenstrual_bleeding"),
+        (.ovulationTestResult, "cycle_ovulation_test"),
+        (.cervicalMucusQuality, "cycle_cervical_mucus"),
+        (.appleStandHour, "stand_hour"),
+        (.toothbrushingEvent, "toothbrushing"),
+        (.handwashingEvent, "handwashing"),
     ]
 
     private static var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [sleepType, .workoutType()]
         for e in eventTypes { types.insert(HKCategoryType(e.id)) }
+        types.insert(HKObjectType.electrocardiogramType())
+        types.insert(HKObjectType.activitySummaryType())
+        types.insert(HKCharacteristicType(.dateOfBirth))
+        types.insert(HKCharacteristicType(.biologicalSex))
+        types.insert(HKCharacteristicType(.bloodType))
         for spec in specs { types.insert(HKQuantityType(spec.id)) }
         return types
     }
@@ -189,19 +240,32 @@ enum HealthExporter {
 
     // MARK: - CSV
 
-    static func buildCSV(daysBack: Int) async throws -> (csv: String, rowCount: Int, range: String) {
+    private static func windowStart(_ daysBack: Int, now: Date = Date()) -> Date {
         let cal = Calendar.current
-        let now = Date()
-        let start = cal.startOfDay(for: cal.date(byAdding: .day, value: -(max(daysBack, 1) - 1), to: now) ?? now)
+        return cal.startOfDay(for: cal.date(byAdding: .day, value: -(max(daysBack, 1) - 1), to: now) ?? now)
+    }
 
+    /// Daily rows. Pass `only` (metric names) for a fast partial read, e.g. for the in-app summary.
+    static func dailyRows(daysBack: Int, only: Set<String>? = nil) async throws -> [ExportRow] {
+        let now = Date()
+        let start = windowStart(daysBack, now: now)
         var rows: [ExportRow] = []
-        for spec in specs {
+        for spec in specs where only == nil || only!.contains(spec.name) {
             rows += try await dailyStatistics(spec, from: start, to: now)
         }
         rows += try await sleepRows(from: start, to: now)
-        rows += try await workoutRows(from: start, to: now)
-
+        if only == nil {
+            rows += try await workoutRows(from: start, to: now)
+            rows += try await activitySummaryRows(from: start, to: now)
+        }
         rows.sort { ($0.date, $0.metric, $0.stat) < ($1.date, $1.metric, $1.stat) }
+        return rows
+    }
+
+    static func buildCSV(daysBack: Int) async throws -> (csv: String, rowCount: Int, range: String) {
+        let now = Date()
+        let start = windowStart(daysBack, now: now)
+        let rows = try await dailyRows(daysBack: daysBack)
 
         var lines = ["date,metric,stat,value,unit"]
         for r in rows {
@@ -266,7 +330,33 @@ enum HealthExporter {
         }
         if let all = try? await samples(of: .workoutType(), from: start, to: now) {
             for case let w as HKWorkout in all {
-                add(w, metric: "workout_\(workoutName(w.workoutActivityType))", value: w.duration / 60, unit: "min")
+                let name = "workout_\(workoutName(w.workoutActivityType))"
+                add(w, metric: name, value: w.duration / 60, unit: "min")
+                if let kcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()) {
+                    add(w, metric: "\(name)_energy", value: kcal, unit: "kcal")
+                }
+                if let hr = w.statistics(for: HKQuantityType(.heartRate))?.averageQuantity()?.doubleValue(for: bpm) {
+                    add(w, metric: "\(name)_avg_heart_rate", value: hr, unit: "count/min")
+                }
+                var meters = 0.0
+                for id in [HKQuantityTypeIdentifier.distanceWalkingRunning, .distanceCycling, .distanceSwimming] {
+                    meters += w.statistics(for: HKQuantityType(id))?.sumQuantity()?.doubleValue(for: .meter()) ?? 0
+                }
+                if meters > 0 { add(w, metric: "\(name)_distance", value: meters, unit: "m") }
+            }
+        }
+        if let all = try? await samples(of: HKObjectType.electrocardiogramType(), from: start, to: now) {
+            for case let ecg as HKElectrocardiogram in all {
+                let kind: String
+                switch ecg.classification {
+                case .sinusRhythm: kind = "sinus_rhythm"
+                case .atrialFibrillation: kind = "atrial_fibrillation"
+                case .inconclusiveLowHeartRate: kind = "inconclusive_low_hr"
+                case .inconclusiveHighHeartRate: kind = "inconclusive_high_hr"
+                case .inconclusivePoorReading: kind = "inconclusive_poor_reading"
+                default: kind = "other"
+                }
+                add(ecg, metric: "ecg_\(kind)", value: ecg.averageHeartRate?.doubleValue(for: bpm) ?? 0, unit: "count/min")
             }
         }
 
@@ -275,18 +365,79 @@ enum HealthExporter {
         return (csv, out.count)
     }
 
+    private static let hourlyMetrics: Set<String> = [
+        "steps", "active_energy", "basal_energy", "distance_walking_running", "heart_rate", "hrv_sdnn",
+        "respiratory_rate", "blood_oxygen", "environmental_audio", "headphone_audio",
+    ]
+
+    /// Hour-by-hour statistics (capped at 14 days) for the high-frequency metrics.
+    static func buildHourlyCSV(daysBack: Int) async throws -> (csv: String, rowCount: Int) {
+        let now = Date()
+        let start = windowStart(min(max(daysBack, 1), 14), now: now)
+        var rows: [ExportRow] = []
+        for spec in specs where hourlyMetrics.contains(spec.name) {
+            rows += try await dailyStatistics(spec, from: start, to: now, hourly: true)
+        }
+        rows.sort { ($0.date, $0.metric, $0.stat) < ($1.date, $1.metric, $1.stat) }
+        var lines = ["hour,metric,stat,value,unit"]
+        for r in rows { lines.append("\(r.date),\(r.metric),\(r.stat),\(r.value),\(r.unit)") }
+        return (lines.joined(separator: "\n") + "\n", rows.count)
+    }
+
+    /// Static profile facts from Health (age, sex, blood type) as key,value rows.
+    static func buildProfileCSV() -> (csv: String, rowCount: Int) {
+        var rows: [(String, String)] = []
+        let cal = Calendar.current
+        if let comps = try? store.dateOfBirthComponents(), let dob = cal.date(from: comps) {
+            rows.append(("date_of_birth", dayString(dob)))
+            if let age = cal.dateComponents([.year], from: dob, to: Date()).year { rows.append(("age_years", "\(age)")) }
+        }
+        if let sex = try? store.biologicalSex().biologicalSex {
+            switch sex {
+            case .female: rows.append(("biological_sex", "female"))
+            case .male: rows.append(("biological_sex", "male"))
+            case .other: rows.append(("biological_sex", "other"))
+            default: break
+            }
+        }
+        if let blood = try? store.bloodType().bloodType {
+            let name: String?
+            switch blood {
+            case .aPositive: name = "A+"
+            case .aNegative: name = "A-"
+            case .bPositive: name = "B+"
+            case .bNegative: name = "B-"
+            case .abPositive: name = "AB+"
+            case .abNegative: name = "AB-"
+            case .oPositive: name = "O+"
+            case .oNegative: name = "O-"
+            default: name = nil
+            }
+            if let name { rows.append(("blood_type", name)) }
+        }
+        rows.append(("timezone", TimeZone.current.identifier))
+        let lines = ["key,value"] + rows.map { "\($0.0),\(csvEscape($0.1))" }
+        return (lines.joined(separator: "\n") + "\n", rows.count)
+    }
+
     private static func csvEscape(_ field: String) -> String {
         guard field.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" }) else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
-    private static func dayString(_ date: Date) -> String {
+    private static func makeFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.calendar = Calendar.current
         f.timeZone = Calendar.current.timeZone
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        f.dateFormat = format
+        return f
+    }
+    private static let dayFormatter = makeFormatter("yyyy-MM-dd")
+    private static let hourFormatter = makeFormatter("yyyy-MM-dd HH:00")
+
+    private static func dayString(_ date: Date, hourly: Bool = false) -> String {
+        (hourly ? hourFormatter : dayFormatter).string(from: date)
     }
 
     /// The Health database can't be read while the phone is locked; surface that, ignore other per-type errors.
@@ -294,7 +445,7 @@ enum HealthExporter {
         (error as? HKError)?.code == .errorDatabaseInaccessible || error is CancellationError
     }
 
-    private static func dailyStatistics(_ spec: Spec, from start: Date, to end: Date) async throws -> [ExportRow] {
+    private static func dailyStatistics(_ spec: Spec, from start: Date, to end: Date, hourly: Bool = false) async throws -> [ExportRow] {
         let type = HKQuantityType(spec.id)
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
         let options: HKStatisticsOptions = spec.cumulative ? .cumulativeSum : [.discreteAverage, .discreteMin, .discreteMax]
@@ -306,12 +457,12 @@ enum HealthExporter {
                                                         quantitySamplePredicate: predicate,
                                                         options: options,
                                                         anchorDate: start,
-                                                        intervalComponents: DateComponents(day: 1))
+                                                        intervalComponents: hourly ? DateComponents(hour: 1) : DateComponents(day: 1))
                 query.initialResultsHandler = { _, results, error in
                     if let error { cont.resume(throwing: error); return }
                     var rows: [ExportRow] = []
                     results?.enumerateStatistics(from: start, to: end) { stats, _ in
-                        let day = dayString(stats.startDate)
+                        let day = dayString(stats.startDate, hourly: hourly)
                         func add(_ stat: String, _ q: HKQuantity?) {
                             guard let q else { return }
                             rows.append(ExportRow(date: day, metric: spec.name, stat: stat,
@@ -366,9 +517,58 @@ enum HealthExporter {
             let key = "\(dayString(s.endDate))|\(stage)"
             totals[key, default: 0] += s.endDate.timeIntervalSince(s.startDate) / 3600
         }
-        return totals.map { key, hours in
+        var rows = totals.map { key, hours -> ExportRow in
             let parts = key.split(separator: "|")
             return ExportRow(date: String(parts[0]), metric: String(parts[1]), stat: "sum", value: hours, unit: "hr")
+        }
+        // Total time actually asleep per night (all asleep stages combined).
+        var asleep: [String: Double] = [:]
+        for (key, hours) in totals {
+            let parts = key.split(separator: "|")
+            if ["sleep_core", "sleep_deep", "sleep_rem", "sleep_asleep"].contains(String(parts[1])) {
+                asleep[String(parts[0]), default: 0] += hours
+            }
+        }
+        for (day, hours) in asleep {
+            rows.append(ExportRow(date: day, metric: "sleep_total_asleep", stat: "sum", value: hours, unit: "hr"))
+        }
+        return rows
+    }
+
+    /// Apple Watch activity rings: move / exercise / stand, with goals.
+    private static func activitySummaryRows(from start: Date, to end: Date) async throws -> [ExportRow] {
+        let cal = Calendar.current
+        var s = cal.dateComponents([.year, .month, .day], from: start); s.calendar = cal
+        var e = cal.dateComponents([.year, .month, .day], from: end); e.calendar = cal
+        let predicate = HKQuery.predicate(forActivitySummariesBetweenStart: s, end: e)
+        do {
+            return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[ExportRow], Error>) in
+                let query = HKActivitySummaryQuery(predicate: predicate) { _, summaries, error in
+                    if let error { cont.resume(throwing: error); return }
+                    var rows: [ExportRow] = []
+                    for summary in summaries ?? [] {
+                        var comps = summary.dateComponents(for: cal)
+                        comps.calendar = cal
+                        guard let date = cal.date(from: comps) else { continue }
+                        let day = dayString(date)
+                        func add(_ metric: String, _ q: HKQuantity?, _ unit: HKUnit, _ label: String) {
+                            guard let q else { return }
+                            rows.append(ExportRow(date: day, metric: metric, stat: "sum", value: q.doubleValue(for: unit), unit: label))
+                        }
+                        add("activity_move_kcal", summary.activeEnergyBurned, .kilocalorie(), "kcal")
+                        add("activity_move_goal", summary.activeEnergyBurnedGoal, .kilocalorie(), "kcal")
+                        add("activity_exercise_min", summary.appleExerciseTime, .minute(), "min")
+                        add("activity_exercise_goal", summary.exerciseTimeGoal, .minute(), "min")
+                        add("activity_stand_hours", summary.appleStandHours, .count(), "count")
+                        add("activity_stand_goal", summary.standHoursGoal, .count(), "count")
+                    }
+                    cont.resume(returning: rows)
+                }
+                store.execute(query)
+            }
+        } catch {
+            if shouldRethrow(error) { throw error }
+            return []
         }
     }
 

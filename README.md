@@ -21,7 +21,7 @@ HealthKit entitlements (including background delivery) are enabled automatically
 Open the app, paste your dashboard URL (must be `https://`) and optional API token, tap **Export now**, and approve the Health permissions. To backfill history, raise "Days included" (up to 365) and export once, then set it back to ~7.
 
 ## What gets exported
-Each export sends **two CSVs** in two POSTs to the same URL, distinguished by the `X-Dataset` header:
+Each export sends up to **four CSVs** in separate POSTs to the same URL, distinguished by the `X-Dataset` header:
 
 **`daily`** (`X-Dataset: daily`) - one row per day/metric/stat:
 ```
@@ -43,6 +43,15 @@ Upsert/dedupe on `(start, end, metric, source, value)`. Includes weight and body
 Lose It! and Renpho only appear if they are syncing into Apple Health (Lose It! > Settings > Apple Health; Renpho > Settings > Apple Health). Renpho writes weight, BMI, body fat and lean mass; its other readings (muscle, water, bone) are not Health types and can't be exported by any HealthKit app.
 
 The daily file has ~100 metrics: activity, heart/vitals, body, mobility, running/cycling, respiratory, nutrition, audio exposure, sleep stages (hours, dated by wake day) and per-type workout count/minutes/energy. Add more in `HealthExporter.specs`. Not included: ECG waveforms, clinical records, cycle tracking, medications, GPS routes.
+
+**`hourly`** (`X-Dataset: hourly`, optional toggle in the app) - `hour,metric,stat,value,unit` with `hour` like `2026-09-28 14:00`; heart rate, steps, energy, HRV, respiratory rate, blood oxygen and audio exposure, last 14 days max. Upsert on `(hour, metric, stat)`.
+
+**`profile`** (`X-Dataset: profile`) - `key,value` rows: date of birth, age, biological sex, blood type, timezone. Replace on each upload.
+
+The samples file also includes workout detail (energy, average heart rate, distance), ECG results (classification and average heart rate), about 40 symptoms, cycle-tracking entries, stand hours, toothbrushing and handwashing. The daily file adds Activity ring rows (`activity_move_kcal`, goals, stand hours) and `sleep_total_asleep`. You can switch off any of these in the iOS Health permission sheet.
+
+## In-app summary
+The **Summary** tab shows the latest value, a 7-day average vs. the prior week and a 35-day chart for steps, energy, exercise, sleep, resting heart rate, HRV, blood oxygen, weight, body fat, calories and macros. A "Worth a look" box flags any metric whose latest value is 2+ standard deviations from your last 4 weeks (and differs by a minimum percentage). It's a heads-up, not medical advice.
 
 ## Dashboard endpoint contract
 `POST <your URL>` with the CSV as the raw body:

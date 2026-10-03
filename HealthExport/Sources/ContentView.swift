@@ -1,9 +1,21 @@
 import SwiftUI
 
 struct ContentView: View {
+    var body: some View {
+        TabView {
+            SummaryView()
+                .tabItem { Label("Summary", systemImage: "heart.text.square") }
+            ExportView()
+                .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
+        }
+    }
+}
+
+struct ExportView: View {
     @ObservedObject private var coordinator = ExportCoordinator.shared
     @AppStorage(SettingsKey.endpoint) private var endpoint = ""
     @AppStorage(SettingsKey.daysBack) private var daysBack = 7
+    @AppStorage(SettingsKey.hourly) private var includeHourly = true
     @State private var token = Keychain.get(SettingsKey.token)
 
     var body: some View {
@@ -25,6 +37,12 @@ struct ContentView: View {
                     Stepper("Days included: \(daysBack)", value: $daysBack, in: 1...365)
                 } footer: {
                     Text("Each export re-sends the last \(daysBack) day(s) so late-syncing data (e.g. Apple Watch) is picked up. Raise it once to backfill history.")
+                }
+
+                Section {
+                    Toggle("Include hourly data", isOn: $includeHourly)
+                } footer: {
+                    Text("Hour-by-hour heart rate, steps, energy, HRV, respiratory rate and blood oxygen (last 14 days max). Turn off for smaller uploads.")
                 }
 
                 Section("Export") {

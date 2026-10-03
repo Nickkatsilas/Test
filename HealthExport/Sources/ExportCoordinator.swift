@@ -7,6 +7,7 @@ enum SettingsKey {
     static let daysBack = "daysBack"
     static let lastExport = "lastExportDate"
     static let lastStatus = "lastStatus"
+    static let hourly = "includeHourly"
     static let token = "uploadToken"   // stored in the Keychain
 }
 
@@ -47,19 +48,30 @@ final class ExportCoordinator: ObservableObject {
             let days = defaults.object(forKey: SettingsKey.daysBack) as? Int ?? 7
             setStatus("Reading Health data...")
             let (csv, rowCount, range) = try await HealthExporter.buildCSV(daysBack: days)
-
             let (samplesCSV, sampleCount) = try await HealthExporter.buildSamplesCSV(daysBack: days)
+            let (profileCSV, _) = HealthExporter.buildProfileCSV()
+
+            let date = Self.fileDate()
+            var datasets: [(kind: String, name: String, csv: String)] = [
+                ("daily", "health-export-\(date).csv", csv),
+                ("samples", "health-samples-\(date).csv", samplesCSV),
+                ("profile", "health-profile-\(date).csv", profileCSV),
+            ]
+            var hourlyCount = 0
+            if defaults.object(forKey: SettingsKey.hourly) as? Bool ?? true {
+                let (hourlyCSV, n) = try await HealthExporter.buildHourlyCSV(daysBack: days)
+                hourlyCount = n
+                datasets.append(("hourly", "health-hourly-\(date).csv", hourlyCSV))
+            }
+            let counts = "\(rowCount) daily, \(sampleCount) samples, \(hourlyCount) hourly"
 
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let name = "health-export-\(Self.fileDate()).csv"
-            let samplesName = "health-samples-\(Self.fileDate()).csv"
-            try csv.write(to: docs.appendingPathComponent(name), atomically: true, encoding: .utf8)
-            try samplesCSV.write(to: docs.appendingPathComponent(samplesName), atomically: true, encoding: .utf8)
-            lastFiles = [docs.appendingPathComponent(name), docs.appendingPathComponent(samplesName)]
+            for d in datasets { try d.csv.write(to: docs.appendingPathComponent(d.name), atomically: true, encoding: .utf8) }
+            lastFiles = datasets.map { docs.appendingPathComponent($0.name) }
 
             let raw = (defaults.string(forKey: SettingsKey.endpoint) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !raw.isEmpty else {
-                setStatus("Saved \(rowCount) rows locally (\(range)). Set a dashboard URL to upload.")
+                setStatus("Saved locally: \(counts) (\(range)). Set a dashboard URL to upload.")
                 return false
             }
             guard let url = URL(string: raw), url.scheme == "https" else {
@@ -67,14 +79,14 @@ final class ExportCoordinator: ObservableObject {
                 return false
             }
 
-            setStatus("Uploading \(rowCount) daily rows + \(sampleCount) samples...")
+            setStatus("Uploading \(counts)...")
             let token = Keychain.get(SettingsKey.token)
-            try await Uploader.upload(csv: Data(csv.utf8), filename: name, range: range,
-                                      dataset: "daily", to: url, token: token)
-            try await Uploader.upload(csv: Data(samplesCSV.utf8), filename: samplesName, range: range,
-                                      dataset: "samples", to: url, token: token)
+            for d in datasets {
+                try await Uploader.upload(csv: Data(d.csv.utf8), filename: d.name, range: range,
+                                          dataset: d.kind, to: url, token: token)
+            }
             defaults.set(Date(), forKey: SettingsKey.lastExport)
-            setStatus("Uploaded \(rowCount) daily rows + \(sampleCount) samples (\(range)) at \(Date().formatted(date: .abbreviated, time: .shortened))")
+            setStatus("Uploaded \(counts) (\(range)) at \(Date().formatted(date: .abbreviated, time: .shortened))")
             return true
         } catch {
             setStatus("Export failed: \(error.localizedDescription)")
